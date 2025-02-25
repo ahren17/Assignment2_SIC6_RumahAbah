@@ -16,20 +16,26 @@ VARIABLE_HUMID = "humidity"
 VARIABLE_PIR = "motion"
 UBIDOTS_URL = "http://industrial.api.ubidots.com/api/v1.6/devices/" + DEVICE_LABEL
 
+# Konfigurasi Flask
+FLASK_URL = "http://192.168.43.88:6500/sensor"  # Ganti dengan IP laptop Anda
+
 # Inisialisasi koneksi WiFi
 def connect_wifi():
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
     wlan.connect(SSID, PASSWORD)
     timeout = 10  # Waktu tunggu maksimum dalam detik
+
     while not wlan.isconnected() and timeout > 0:
         print("Menghubungkan ke WiFi...")
         utime.sleep(1)
         timeout -= 1
+
     if wlan.isconnected():
         print("Terhubung ke WiFi", wlan.ifconfig())
     else:
-        print("Gagal terhubung ke WiFi. Periksa kredensial atau jaringan.")
+        print("Gagal terhubung ke WiFi. Reboot ESP32...")
+        machine.reset()  # Reboot otomatis jika WiFi gagal
 
 # Inisialisasi sensor dan LED
 sensor_dht = dht.DHT11(machine.Pin(4))  # DHT11 di GPIO 4
@@ -48,11 +54,25 @@ def send_to_ubidots(temp, hum, motion):
     }
     print("Mengirim data ke Ubidots...")
     try:
-        response = urequests.post(UBIDOTS_URL, json=data, headers=headers)
+        response = urequests.post(UBIDOTS_URL, json=data, headers=headers, timeout=5)
         print("Response:", response.text)
         response.close()
     except Exception as e:
         print("Gagal mengirim data ke Ubidots:", e)
+
+def send_to_flask(temp, hum, motion):
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "temperature": temp,
+        "humidity": hum,
+        "motion": motion
+    }
+    try:
+        response = urequests.post(FLASK_URL, json=data, headers=headers, timeout=5)
+        print("Response from Flask:", response.text)
+        response.close()
+    except Exception as e:
+        print("Gagal mengirim data ke Flask:", e)
 
 # Fungsi callback untuk timer
 def sensor_callback(t):
@@ -70,6 +90,7 @@ def sensor_callback(t):
 
         print(f"Suhu: {temp}C, Kelembaban: {hum}%, Gerakan: {motion}")
         send_to_ubidots(temp, hum, motion)
+        send_to_flask(temp, hum, motion)  # Mengirim data ke Flask
     except Exception as e:
         print("Error:", e)
 
